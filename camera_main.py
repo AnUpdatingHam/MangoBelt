@@ -19,19 +19,37 @@ OFFSET_MEDIUM_THRESHOLD = 0.4
 OFFSET_EXTREME_THRESHOLD = 0.6
 
 AUDIO_COOL_DOWN = 3.0 * FRAME_RATE
-cur_audio_cool_down = 0.0
 
-AUDIO_LEVEL_NORMAL = 0.0
-AUDIO_LEVEL_WARNING = 2.0
+AUDIO_LEVEL_NORMAL = 0
+AUDIO_LEVEL_WARNING = 2
 
+__cur_audio_cooldown = 0.0
+__cur_audio_level = 0
+
+audios_dict = {
+    "KEEP_FORWARD": 0,
+    "OBSTACLE_FORWARD": 1,
+    "SLIGHT_LEFT": 2,
+    "SLIGHT_RIGHT": 3,
+    "MEDIUM_LEFT": 4,
+    "MEDIUM_RIGHT": 5,
+    "EXTREME_LEFT": 6,
+    "EXTREME_RIGHT": 7,
+}
 
 def play_audio(audio, audio_level):
-    if audio_level >= AUDIO_LEVEL_WARNING:
+    global __cur_audio_level  # 声明__cur_audio_level为全局变量
+    global __cur_audio_cooldown  # 声明__cur_audio_cooldown为全局变量
+    if audio_level > __cur_audio_level:
         print("play audio!")
+        __cur_audio_level = audio_level
+        __cur_audio_cooldown = AUDIO_COOL_DOWN
         return
-    if cur_audio_cool_down > 0:
+    if __cur_audio_cooldown > 0:
         return
     print("play audio!")
+    __cur_audio_level = audio_level
+    __cur_audio_cooldown = AUDIO_COOL_DOWN
 
 
 def find_connected_components(mask):
@@ -133,7 +151,7 @@ def judge_obstacle_by_central_lines(mask):
     false_ratio = false_count / countable_height
 
     cv2.line(image, (midline_x, IMAGE_HEIGHT), (midline_x, countable_height), (0, 125, 125), 2)
-    print(f"false ratio: {false_ratio}")
+    # print(f"false ratio: {false_ratio}")
     return false_ratio > OBSTACLE_CENTRAL_LINES_THRESHOLD
 
 
@@ -154,9 +172,11 @@ def get_red(image):
     if judge_obstacle_by_area(mask):
         cv2.putText(image, "Obstacle by area", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                     cv2.LINE_AA)
+        play_audio(audios_dict["OBSTACLE_FORWARD"], AUDIO_LEVEL_WARNING)
     if judge_obstacle_by_central_lines(mask):
         cv2.putText(image, "Obstacle by central", (50, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                     cv2.LINE_AA)
+        play_audio(audios_dict["OBSTACLE_FORWARD"], AUDIO_LEVEL_WARNING)
 
     components_cnt, components = find_connected_components(mask)
     valid_components_cnt, valid_components = filter_small_components_by_bound(components)
@@ -179,19 +199,21 @@ def get_red(image):
         if abs(left_offset_index) < OFFSET_SLIGHT_THRESHOLD:
             cv2.putText(image, "straight forward", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                         cv2.LINE_AA)
+            play_audio(audios_dict["KEEP_FORWARD"], AUDIO_LEVEL_NORMAL)
         else:
-            prefix = "slight"
+            prefix = "SLIGHT"
             if abs(left_offset_index) > OFFSET_EXTREME_THRESHOLD:
-                prefix = "extreme"
+                prefix = "EXTREME"
             elif abs(left_offset_index) > OFFSET_MEDIUM_THRESHOLD:
-                prefix = "medium"
+                prefix = "MEDIUM"
 
-            suffix = " left"
+            suffix = "LEFT"
             if left_offset_index < 0:
-                suffix = " right"
+                suffix = "RIGHT"
 
-            cv2.putText(image, f"{prefix}{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+            cv2.putText(image, f"{prefix}_{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                         cv2.LINE_AA)
+            play_audio(audios_dict[f"{prefix}_{suffix}"], AUDIO_LEVEL_NORMAL)
 
     return valid_components_cnt, valid_components
 
@@ -204,6 +226,7 @@ cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
 while True:
     try:
         ret, image = cap.read()
+        __cur_audio_cooldown -= 1
         if not ret:
             print("Failed to grab frame")
             break
