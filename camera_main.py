@@ -41,30 +41,73 @@ def filter_small_components_by_bound(components, area_lower_bound):
     return valid_components.size, valid_components
 
 
-def find_extreme_points(image, component_mask):
-    # 提取连通块的像素坐标
-    points = np.argwhere(component_mask)
+def find_extreme_points2(image, component_mask):
+    # 步骤1：找到所有包含1的行的索引
+    rows_with_ones = np.any(component_mask, axis=1)
 
-    # 找到最下最左的点
-    min_row_index = np.argmin(points[:, 0])  # 找到行坐标中的最小值的索引
-    bottom_left = (points[min_row_index, 0], points[min_row_index, 1])
-
-    # 找到最下最右的点
-    max_col_index = np.argmax(points[:, 1])  # 找到列坐标中的最大值的索引
-    bottom_right = (points[max_col_index, 0], points[max_col_index, 1])
-
-    # 计算几何中心
-    if points.size > 0:
-        center_of_mass = (int(np.mean(points[:, 0])), int(np.mean(points[:, 1])))
+    # 使用np.where找到所有包含True的行索引，然后取最后一个
+    indices_with_ones = np.where(rows_with_ones)[0]
+    if indices_with_ones.size > 0:
+        bottom_row_index = indices_with_ones[-1]  # 获取最后一个索引
     else:
-        return image  # 如果连通块为空，则直接返回原始图像
+        return image  # 如果没有找到True，则直接返回原始图像
+
+    # 步骤3：提取最底下的这一行，上提20个像素
+    if bottom_row_index < 40:
+        print("最后一行index不大于20")
+        return image
+    bottom_row = component_mask[bottom_row_index - 20, :]
+
+    # 找到最左边和最右边的1的索引
+    leftmost_index = np.argmax(bottom_row)
+    rightmost_index = len(bottom_row) - np.argmax(np.flipud(bottom_row))
+
+    points = np.argwhere(component_mask)
+    center_of_mass = (int(np.mean(points[:, 1])), int(np.mean(points[:, 0])))
 
     # 在图像上标记点
-    cv2.circle(image, bottom_left, 5, (0, 255, 0), -1)  # 绿色：最下最左
-    cv2.circle(image, bottom_right, 5, (255, 0, 0), -1)  # 蓝色：最下最右
+    cv2.circle(image, (leftmost_index, bottom_row_index), 5, (0, 255, 0), -1)  # 绿色：最下最左
+    cv2.circle(image, (rightmost_index, bottom_row_index), 5, (255, 0, 0), -1)  # 蓝色：最下最右
     cv2.circle(image, center_of_mass, 5, (0, 0, 255), -1)  # 红色：几何中心
 
-    return bottom_left, bottom_right, center_of_mass
+    # 绘制连线
+    cv2.line(image, (leftmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最左到几何中心
+    cv2.line(image, (rightmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最右到几何中心
+
+    # # 在图像上标记点
+    # cv2.circle(image, (bottom_row_index, leftmost_index), 5, (0, 255, 0), -1)  # 绿色：最下最左
+    # cv2.circle(image, (bottom_row_index, rightmost_index), 5, (255, 0, 0), -1)  # 蓝色：最下最右
+    # cv2.circle(image, (bottom_row_index, (leftmost_index + rightmost_index)/2), 5, (0, 0, 255), -1)  # 红色：几何中心
+
+    # 打印结果
+    print(f"最底下的连通块位于第 {bottom_row_index} 行")
+    print(f"连通块的边界索引：最左边是 {leftmost_index}, 最右边是 {rightmost_index}")
+
+
+# def find_extreme_points(image, component_mask):
+#     # 提取连通块的像素坐标
+#     points = np.argwhere(component_mask)
+#
+#     # 找到最下最左的点
+#     min_row_index = np.argmin(points[:, 0])  # 找到行坐标中的最小值的索引
+#     bottom_left = (points[min_row_index, 0], points[min_row_index, 1])
+#
+#     # 找到最下最右的点
+#     max_col_index = np.argmax(points[:, 1])  # 找到列坐标中的最大值的索引
+#     bottom_right = (points[max_col_index, 0], points[max_col_index, 1])
+#
+#     # 计算几何中心
+#     if points.size > 0:
+#         center_of_mass = (int(np.mean(points[:, 0])), int(np.mean(points[:, 1])))
+#     else:
+#         return image  # 如果连通块为空，则直接返回原始图像
+#
+#     # 在图像上标记点
+#     cv2.circle(image, bottom_left, 5, (0, 255, 0), -1)  # 绿色：最下最左
+#     cv2.circle(image, bottom_right, 5, (255, 0, 0), -1)  # 蓝色：最下最右
+#     cv2.circle(image, center_of_mass, 5, (0, 0, 255), -1)  # 红色：几何中心
+#
+#     return bottom_left, bottom_right, center_of_mass
 
 def get_red(image):
     # 将图像从BGR颜色空间转换到HSV颜色空间
@@ -96,10 +139,6 @@ def get_red(image):
     components_cnt, components = find_connected_components(mask)
     valid_components_cnt, valid_components = filter_small_components_by_bound(components, area_lower_bound=50)
 
-    # 打印连通块的数量
-    print(f"Number of connected components: {components_cnt}")
-    print(f"Number of valid connected components: {valid_components_cnt}")
-
     # 可选：可视化连通块
     # 将连通块编号绘制到原图中
     for i in valid_components:  # 遍历所有有效连通块的标签
@@ -109,12 +148,25 @@ def get_red(image):
         # 将当前连通块的像素点填充为随机颜色
         image[component_mask] = color
 
+        # 打开文件并写入矩阵，确保所有元素都转换为字符串
+        # print(component_mask)
+        # np.savetxt(f"mask{i}.txt", component_mask, delimiter=",", fmt='%d')  # 使用整数格式保存
+        # np.save(f"mask{i}.txt", component_mask)
+        # 将 NumPy 数组转换为列表，然后将其元素转换为字符串
+        # row_list = row.tolist()  # 将 NumPy 数组转换为列表
+        # row_str = ' '.join(map(str, row_list))  # 连接字符串
+        # f.write(row_str + '\n')  # 写入一行并换行
+
         # 获取偏移量
-        find_extreme_points(image, component_mask)
+        find_extreme_points2(image, component_mask)
     return image
 
 # 打开摄像头并实时处理视频帧
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_FPS, 30)
+
 while True:
     try:
         ret, frame = cap.read()
