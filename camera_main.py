@@ -41,7 +41,7 @@ def filter_small_components_by_bound(components, area_lower_bound):
     return valid_components.size, valid_components
 
 
-def judge_direction_by_key_points(image, left_x, right_x, center_x):
+def judge_direction_by_key_points(left_x, right_x, center_x):
     base_len = right_x - left_x
     offset = left_x + right_x - 2 * center_x
     return offset / base_len
@@ -61,7 +61,7 @@ def find_extreme_points(image, component_mask):
     # 步骤3：提取最底下的这一行，上提20个像素
     if bottom_row_index < 40:
         print("最后一行index不大于20")
-        return image
+        return 0, 0, 0
     bottom_row = component_mask[bottom_row_index - 20, :]
 
     # 找到最左边和最右边的1的索引
@@ -80,7 +80,7 @@ def find_extreme_points(image, component_mask):
     cv2.line(image, (leftmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最左到几何中心
     cv2.line(image, (rightmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最右到几何中心
 
-    return leftmost_index, rightmost_index, center_of_mass[1]
+    return leftmost_index, rightmost_index, center_of_mass[0]
 
 
 def detect_obstacles(total_red_area, white_components_cnt, original_image, area_threshold=10000, white_components_threshold=10):
@@ -130,17 +130,17 @@ def get_red(image):
         image[component_mask] = color
         # 获取偏移量
         left_x, right_x, center_x = find_extreme_points(image, component_mask)
-        left_offset_index += judge_direction_by_key_points(image, left_x, right_x, center_x)
+        left_offset_index += judge_direction_by_key_points(left_x, right_x, center_x)
 
     if len(valid_components) != 0:
         left_offset_index /= len(valid_components)
         threshold_light = 0.3
         threshold_heavy = 0.5
         prefix = "slight"
-        if abs(left_offset_index) > threshold_light:
-            prefix = "medium"
-        elif abs(left_offset_index) > threshold_heavy:
+        if abs(left_offset_index) > threshold_heavy:
             prefix = "extreme"
+        elif abs(left_offset_index) > threshold_light:
+            prefix = "medium"
 
         suffix = " left"
         if left_offset_index < 0:
