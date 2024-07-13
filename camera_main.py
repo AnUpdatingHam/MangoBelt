@@ -2,6 +2,7 @@ import time
 
 import cv2
 import numpy as np
+import pygame
 
 IMAGE_WIDTH = 640
 IMAGE_HEIGHT = 480
@@ -18,7 +19,7 @@ OFFSET_SLIGHT_THRESHOLD = 0.25
 OFFSET_MEDIUM_THRESHOLD = 0.4
 OFFSET_EXTREME_THRESHOLD = 0.6
 
-AUDIO_COOL_DOWN = 3.0 * FRAME_RATE
+AUDIO_COOL_DOWN = 4.0 * FRAME_RATE
 
 AUDIO_LEVEL_NORMAL = 0
 AUDIO_LEVEL_WARNING = 2
@@ -27,27 +28,32 @@ __cur_audio_cooldown = 0.0
 __cur_audio_level = 0
 
 audios_dict = {
-    "KEEP_FORWARD": 0,
-    "OBSTACLE_FORWARD": 1,
-    "SLIGHT_LEFT": 2,
-    "SLIGHT_RIGHT": 3,
-    "MEDIUM_LEFT": 4,
-    "MEDIUM_RIGHT": 5,
-    "EXTREME_LEFT": 6,
-    "EXTREME_RIGHT": 7,
+    "KEEP_FORWARD": "./keep_forward.mp3",
+    "OBSTACLE_FORWARD": "obstacle_forward.mp3",
+    "SLIGHT_LEFT": "./slight_left.mp3",
+    "SLIGHT_RIGHT": "./slight_right.mp3",
+    "MEDIUM_LEFT": "./medium_left.mp3",
+    "MEDIUM_RIGHT": "./medium_right.mp3",
+    "EXTREME_LEFT": "./extreme_left.mp3",
+    "EXTREME_RIGHT": "./extreme_right.mp3",
 }
+
 
 def play_audio(audio, audio_level):
     global __cur_audio_level  # 声明__cur_audio_level为全局变量
     global __cur_audio_cooldown  # 声明__cur_audio_cooldown为全局变量
     if audio_level > __cur_audio_level:
-        print("play audio!")
+        pygame.mixer.music.load(audio)
+        pygame.mixer.music.play()
+
+
         __cur_audio_level = audio_level
         __cur_audio_cooldown = AUDIO_COOL_DOWN
         return
     if __cur_audio_cooldown > 0:
         return
-    print("play audio!")
+    pygame.mixer.music.load(audio)
+    pygame.mixer.music.play()
     __cur_audio_level = audio_level
     __cur_audio_cooldown = AUDIO_COOL_DOWN
 
@@ -207,9 +213,9 @@ def get_red(image):
             elif abs(left_offset_index) > OFFSET_MEDIUM_THRESHOLD:
                 prefix = "MEDIUM"
 
-            suffix = "LEFT"
+            suffix = "RIGHT"
             if left_offset_index < 0:
-                suffix = "RIGHT"
+                suffix = "LEFT"
 
             cv2.putText(image, f"{prefix}_{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                         cv2.LINE_AA)
@@ -222,6 +228,8 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, IMAGE_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, IMAGE_HEIGHT)
 cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
+pygame.mixer.init()
+
 
 while True:
     try:
@@ -241,6 +249,7 @@ while True:
     except Exception as e:
         print(f"Error in main loop: {e}")
         break
+
 
 cap.release()
 cv2.destroyAllWindows()
