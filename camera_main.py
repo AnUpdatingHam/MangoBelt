@@ -41,6 +41,12 @@ def filter_small_components_by_bound(components, area_lower_bound):
     return valid_components.size, valid_components
 
 
+def judge_direction_by_key_points(image, left_x, right_x, center_x):
+    base_len = right_x - left_x
+    offset = left_x + right_x - 2 * center_x
+    return offset / base_len
+
+
 def find_extreme_points(image, component_mask):
     # 步骤1：找到所有包含1的行的索引
     rows_with_ones = np.any(component_mask, axis=1)
@@ -74,14 +80,7 @@ def find_extreme_points(image, component_mask):
     cv2.line(image, (leftmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最左到几何中心
     cv2.line(image, (rightmost_index, bottom_row_index), center_of_mass, (0, 0, 255), 2)  # 从最下最右到几何中心
 
-    # # 在图像上标记点
-    # cv2.circle(image, (bottom_row_index, leftmost_index), 5, (0, 255, 0), -1)  # 绿色：最下最左
-    # cv2.circle(image, (bottom_row_index, rightmost_index), 5, (255, 0, 0), -1)  # 蓝色：最下最右
-    # cv2.circle(image, (bottom_row_index, (leftmost_index + rightmost_index)/2), 5, (0, 0, 255), -1)  # 红色：几何中心
-
-    # 打印结果
-    print(f"最底下的连通块位于第 {bottom_row_index} 行")
-    print(f"连通块的边界索引：最左边是 {leftmost_index}, 最右边是 {rightmost_index}")
+    return leftmost_index, rightmost_index, center_of_mass[1]
 
 
 def detect_obstacles(total_red_area, white_components_cnt, original_image, area_threshold=10000, white_components_threshold=10):
@@ -96,8 +95,6 @@ def judge_obstacle_by_area(image, mask):
     img_size = height * width
     bool_mask = mask.astype(bool)
     red_pixel_count = np.sum(bool_mask)
-    print(f"imgSz = {img_size}")
-    print(f"red_pixel_count = {red_pixel_count}")
     return (red_pixel_count / img_size) < 0.45
 
 
@@ -116,12 +113,13 @@ def get_red(image):
     mask2 = cv2.inRange(hsv_image, lower_red2, upper_red2)
     mask = cv2.bitwise_or(mask1, mask2)
     if judge_obstacle_by_area(image, mask):
-        print("obstacle")
         cv2.putText(image, "Obstacle detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                     cv2.LINE_AA)
 
     components_cnt, components = find_connected_components(mask)
     valid_components_cnt, valid_components = filter_small_components_by_bound(components, area_lower_bound=50)
+
+    left_offset_index = 0.0
 
     # 将连通块编号绘制到原图中
     for i in valid_components:  # 遍历所有有效连通块的标签
@@ -131,7 +129,26 @@ def get_red(image):
         # 将当前连通块的像素点填充为随机颜色
         image[component_mask] = color
         # 获取偏移量
-        find_extreme_points(image, component_mask)
+        left_x, right_x, center_x = find_extreme_points(image, component_mask)
+        left_offset_index += judge_direction_by_key_points(image, left_x, right_x, center_x)
+
+    if len(valid_components) != 0:
+        left_offset_index /= len(valid_components)
+        threshold_light = 0.3
+        threshold_heavy = 0.5
+        prefix = "slight"
+        if abs(left_offset_index) > threshold_light:
+            prefix = "medium"
+        elif abs(left_offset_index) > threshold_heavy:
+            prefix = "extreme"
+
+        suffix = " left"
+        if left_offset_index < 0:
+            suffix = " right"
+
+        cv2.putText(image, f"{prefix}{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+                    cv2.LINE_AA)
+
     return valid_components_cnt, valid_components
 
 # 打开摄像头并实时处理视频帧
