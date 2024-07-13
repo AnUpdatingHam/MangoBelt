@@ -18,7 +18,20 @@ OFFSET_SLIGHT_THRESHOLD = 0.25
 OFFSET_MEDIUM_THRESHOLD = 0.4
 OFFSET_EXTREME_THRESHOLD = 0.6
 
-VOICE_NORMAL_COOL_DOWN = 3 * FRAME_RATE
+AUDIO_COOL_DOWN = 3.0 * FRAME_RATE
+cur_audio_cool_down = 0.0
+
+AUDIO_LEVEL_NORMAL = 0.0
+AUDIO_LEVEL_WARNING = 2.0
+
+
+def play_audio(audio, audio_level):
+    if audio_level >= AUDIO_LEVEL_WARNING:
+        print("play audio!")
+        return
+    if cur_audio_cool_down > 0:
+        return
+    print("play audio!")
 
 
 def find_connected_components(mask):
