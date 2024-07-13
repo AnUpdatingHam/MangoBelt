@@ -3,6 +3,23 @@ import time
 import cv2
 import numpy as np
 
+IMAGE_WIDTH = 640
+IMAGE_HEIGHT = 480
+IMAGE_SIZE = IMAGE_WIDTH * IMAGE_HEIGHT
+
+FRAME_RATE = 30
+
+AREA_LOWER_BOUND = IMAGE_SIZE / 30
+
+OBSTACLE_CENTRAL_LINES_THRESHOLD = 0.3
+OBSTACLE_AREA_THRESHOLD = 0.45
+
+OFFSET_SLIGHT_THRESHOLD = 0.25
+OFFSET_MEDIUM_THRESHOLD = 0.4
+OFFSET_EXTREME_THRESHOLD = 0.6
+
+VOICE_NORMAL_COOL_DOWN = 3 * FRAME_RATE
+
 
 def find_connected_components(mask):
     """
@@ -24,12 +41,12 @@ def find_connected_components(mask):
     return num_components, components
 
 
-def filter_small_components_by_bound(components, area_lower_bound):
+def filter_small_components_by_bound(components):
     # 创建一个用于存储每个连通块像素数目的数组
     areas = np.bincount(components.flatten())
 
     # 找到所有面积大于或等于area_lower_bound的连通块的标签
-    valid_labels = np.where(areas[1:] >= area_lower_bound)[0] + 1  # +1 因为数组从0开始，但标签从1开始
+    valid_labels = np.where(areas[1:] >= AREA_LOWER_BOUND)[0] + 1  # +1 因为数组从0开始，但标签从1开始
 
     # 使用有效连通块的标签创建一个布尔索引数组
     valid_mask = (components > 0)  # 背景标签为0，所以从1开始
@@ -83,19 +100,28 @@ def find_extreme_points(image, component_mask):
     return leftmost_index, rightmost_index, center_of_mass[0]
 
 
-def detect_obstacles(total_red_area, white_components_cnt, original_image, area_threshold=10000, white_components_threshold=10):
-    if total_red_area < area_threshold or white_components_cnt > white_components_threshold:
-        print("Obstacle detected!")
-        cv2.putText(original_image, "Obstacle detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-    return original_image
-
-
-def judge_obstacle_by_area(image, mask):
-    height, width, channel = image.shape[:3]
-    img_size = height * width
+def judge_obstacle_by_area(mask):
     bool_mask = mask.astype(bool)
     red_pixel_count = np.sum(bool_mask)
-    return (red_pixel_count / img_size) < 0.45
+    return (red_pixel_count / IMAGE_SIZE) < OBSTACLE_AREA_THRESHOLD
+
+
+def judge_obstacle_by_central_lines(mask):
+    # 确定图像的宽度并计算中心线的 x 坐标
+    midline_x = IMAGE_WIDTH // 2
+
+    # 初始化计数器和y坐标
+    false_count = 0
+    countable_height = int(IMAGE_HEIGHT / 2)
+
+    for y in range(countable_height, IMAGE_HEIGHT):
+        if not mask[y, midline_x]:  # 如果 mask 的值为 False
+            false_count += 1
+    false_ratio = false_count / countable_height
+
+    cv2.line(image, (midline_x, IMAGE_HEIGHT), (midline_x, countable_height), (0, 125, 125), 2)
+    print(f"false ratio: {false_ratio}")
+    return false_ratio > OBSTACLE_CENTRAL_LINES_THRESHOLD
 
 
 def get_red(image):
@@ -112,12 +138,15 @@ def get_red(image):
     mask1 = cv2.inRange(hsv_image, lower_red1, upper_red1)
     mask2 = cv2.inRange(hsv_image, lower_red2, upper_red2)
     mask = cv2.bitwise_or(mask1, mask2)
-    if judge_obstacle_by_area(image, mask):
-        cv2.putText(image, "Obstacle detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+    if judge_obstacle_by_area(mask):
+        cv2.putText(image, "Obstacle by area", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+                    cv2.LINE_AA)
+    if judge_obstacle_by_central_lines(mask):
+        cv2.putText(image, "Obstacle by central", (50, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
                     cv2.LINE_AA)
 
     components_cnt, components = find_connected_components(mask)
-    valid_components_cnt, valid_components = filter_small_components_by_bound(components, area_lower_bound=50)
+    valid_components_cnt, valid_components = filter_small_components_by_bound(components)
 
     left_offset_index = 0.0
 
@@ -134,28 +163,30 @@ def get_red(image):
 
     if len(valid_components) != 0:
         left_offset_index /= len(valid_components)
-        threshold_light = 0.3
-        threshold_heavy = 0.5
-        prefix = "slight"
-        if abs(left_offset_index) > threshold_heavy:
-            prefix = "extreme"
-        elif abs(left_offset_index) > threshold_light:
-            prefix = "medium"
+        if abs(left_offset_index) < OFFSET_SLIGHT_THRESHOLD:
+            cv2.putText(image, "straight forward", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+                        cv2.LINE_AA)
+        else:
+            prefix = "slight"
+            if abs(left_offset_index) > OFFSET_EXTREME_THRESHOLD:
+                prefix = "extreme"
+            elif abs(left_offset_index) > OFFSET_MEDIUM_THRESHOLD:
+                prefix = "medium"
 
-        suffix = " left"
-        if left_offset_index < 0:
-            suffix = " right"
+            suffix = " left"
+            if left_offset_index < 0:
+                suffix = " right"
 
-        cv2.putText(image, f"{prefix}{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
-                    cv2.LINE_AA)
+            cv2.putText(image, f"{prefix}{suffix}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
+                        cv2.LINE_AA)
 
     return valid_components_cnt, valid_components
 
 # 打开摄像头并实时处理视频帧
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-cap.set(cv2.CAP_PROP_FPS, 30)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, IMAGE_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, IMAGE_HEIGHT)
+cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
 
 while True:
     try:
